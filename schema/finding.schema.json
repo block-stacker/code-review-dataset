@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/block-stacker/code-review-dataset/schema/finding.schema.json",
+  "title": "Review finding",
+  "description": "A single annotated defect in one code snippet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "language",
+    "snippet",
+    "title",
+    "category",
+    "severity",
+    "defect_lines",
+    "explanation",
+    "trigger",
+    "observed",
+    "expected",
+    "fix",
+    "fix_rationale",
+    "annotator",
+    "annotated_on"
+  ],
+  "properties": {
+    "id": {
+      "description": "Stable identifier. The numeric part matches the snippet filename.",
+      "type": "string",
+      "pattern": "^(py|ts)-[0-9]{3}$"
+    },
+    "language": {
+      "type": "string",
+      "enum": ["python", "typescript"]
+    },
+    "snippet": {
+      "description": "Repository-relative path to the code under review.",
+      "type": "string",
+      "pattern": "^snippets/(python|typescript)/[A-Za-z0-9_.-]+$"
+    },
+    "title": {
+      "description": "The defect in one line, stated as a claim rather than a question.",
+      "type": "string",
+      "minLength": 12,
+      "maxLength": 120
+    },
+    "category": {
+      "type": "string",
+      "enum": [
+        "correctness",
+        "concurrency",
+        "error-handling",
+        "resource-management",
+        "type-safety",
+        "api-contract",
+        "security",
+        "performance"
+      ]
+    },
+    "severity": {
+      "description": "Defined in ANNOTATION_GUIDE.md. Reflects blast radius and detectability, not fix difficulty.",
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"]
+    },
+    "defect_lines": {
+      "description": "1-indexed lines in the snippet a reviewer would point at.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "integer", "minimum": 1 }
+    },
+    "explanation": {
+      "description": "The mechanism. Why the language behaves this way, not just that it does.",
+      "type": "string",
+      "minLength": 120
+    },
+    "trigger": {
+      "description": "A concrete input, state, or interleaving that produces the failure.",
+      "type": "string",
+      "minLength": 40
+    },
+    "observed": {
+      "description": "What the code actually produces for the trigger.",
+      "type": "string",
+      "minLength": 3
+    },
+    "expected": {
+      "description": "What the surrounding code plainly intends.",
+      "type": "string",
+      "minLength": 3
+    },
+    "fix": {
+      "description": "Corrected code. A fragment is acceptable if the change is local.",
+      "type": "string",
+      "minLength": 10
+    },
+    "fix_rationale": {
+      "description": "Why this fix, and what it deliberately leaves unaddressed.",
+      "type": "string",
+      "minLength": 60
+    },
+    "distractors": {
+      "description": "Nearby code that looks suspicious but is correct as written.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 10 },
+      "default": []
+    },
+    "references": {
+      "description": "Primary sources: language reference, PEP, TC39, or standard library docs.",
+      "type": "array",
+      "items": { "type": "string", "format": "uri" },
+      "default": []
+    },
+    "annotator": {
+      "type": "string",
+      "minLength": 1
+    },
+    "annotated_on": {
+      "type": "string",
+      "format": "date",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    }
+  }
+}
