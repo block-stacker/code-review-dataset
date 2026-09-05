@@ -106,8 +106,10 @@ def check_cross_references(
 def check_unique_ids(records: dict[str, dict[str, Any]]) -> list[Problem]:
     """Report ids claimed by more than one record.
 
-    Filenames already make collisions impossible within a directory, so this
-    only catches the same id reused across languages.
+    Records are keyed by path relative to the repository root, not by
+    filename. Two languages can each hold a file named py-001.json, and
+    keying by filename would let the second silently replace the first,
+    hiding exactly the collision this check exists to find.
     """
     seen: dict[str, str] = {}
     problems: list[Problem] = []
@@ -148,7 +150,7 @@ def validate_all(repo_root: Path = REPO_ROOT) -> list[Problem]:
             continue
 
         problems.extend(check_cross_references(path, record, repo_root))
-        valid_records[path.name] = record
+        valid_records[str(path.relative_to(repo_root))] = record
 
     problems.extend(check_unique_ids(valid_records))
     return problems
