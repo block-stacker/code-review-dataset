@@ -1,0 +1,28 @@
+{
+  "id": "py-002",
+  "language": "python",
+  "snippet": "snippets/python/py-002_generator_consumed_twice.py",
+  "title": "Report traverses the row iterator twice, so the second pass sees nothing",
+  "category": "correctness",
+  "severity": "high",
+  "defect_lines": [
+    20,
+    21
+  ],
+  "explanation": "parse_rows contains a yield, so calling it returns a generator, not a sequence. A generator is an iterator, and an iterator is consumed by a single traversal. Line 20 advances it to exhaustion in order to count the rows; line 21 then begins iterating an iterator that has nothing left, so the comprehension produces an empty list.\n\nNothing raises, because an iterator's __iter__ returns itself and iterating an exhausted iterator is legal and simply yields no items. The failure mode is the dangerous one: an empty result that is indistinguishable from the legitimate case where no row lacked a value. The annotation on line 18 is honest about the type, but Iterator carries no guarantee of re-iterability and nothing in the language enforces single traversal.",
+  "trigger": "report(parse_rows(['host=localhost', 'port=', 'debug=true'])), where exactly one of the three rows has an empty value.",
+  "observed": "'3 rows, 0 empty: []'",
+  "expected": "'3 rows, 1 empty: [\\'port\\']'",
+  "fix": "def report(rows: Iterable[dict[str, str]]) -> str:\n    \"\"\"Describe how many rows were parsed and which ones had no value.\"\"\"\n    materialized = list(rows)\n    empty = [row[\"name\"] for row in materialized if not row[\"value\"]]\n    return f\"{len(materialized)} rows, {len(empty)} empty: {sorted(empty)}\"",
+  "fix_rationale": "The function needs two independent passes and an iterator cannot be rewound, so materializing once is the direct fix. Widening the parameter to Iterable reflects that the function now accepts lists and other re-iterables as well, rather than advertising a constraint it no longer has.\n\nThis gives up exactly the laziness parse_rows was written for: the whole batch is now held in memory, which is a real regression for the large-file case its docstring cites. If that matters, the alternative is a single pass that accumulates the count and the empty names together, keeping memory bounded by the number of empty rows instead of the number of rows. That version is harder to read, which is the trade being made.",
+  "distractors": [
+    "sum(1 for _ in rows) is an idiomatic way to count an iterator of unknown length and is not wrong on its own. The defect is that a second traversal follows it.",
+    "line.partition('=') on a line containing no '=' returns the whole line as the name and an empty string as the value. That looks like a swallowed parse error but is the documented behaviour, and an empty value is a case the report already handles."
+  ],
+  "references": [
+    "https://docs.python.org/3/glossary.html#term-generator",
+    "https://docs.python.org/3/library/stdtypes.html#iterator-types"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

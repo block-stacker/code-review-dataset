@@ -1,0 +1,27 @@
+{
+  "id": "py-001",
+  "language": "python",
+  "snippet": "snippets/python/py-001_mutable_default_accumulator.py",
+  "title": "Shared mutable default argument accumulates tags across every call",
+  "category": "correctness",
+  "severity": "high",
+  "defect_lines": [
+    9
+  ],
+  "explanation": "Default argument values are evaluated once, when the def statement executes, and the resulting object is stored on the function object itself (visible as collect_tags.__defaults__). Every call that omits tags therefore binds that same list, so the append on line 13 mutates state that outlives the call. The docstring on line 18 promises one fresh accumulator per record, and that promise is never kept.\n\nA second consequence compounds the first. Because every call returns the same object, summarize stores one identical list under every key, so the values of the returned dict are aliases of each other rather than independent lists. A caller who later mutates result['a'] silently changes result['b'] too, which is a defect that outlives the function that caused it.",
+  "trigger": "summarize([{'source': 'a', 'tag': 'x'}, {'source': 'b', 'tag': 'y'}]): two records with different sources, each carrying a tag, in a single process.",
+  "observed": "{'a': ['x', 'y'], 'b': ['x', 'y']}, and result['a'] is result['b'] evaluates to True.",
+  "expected": "{'a': ['x'], 'b': ['y']}, with the two lists being distinct objects.",
+  "fix": "def collect_tags(record: dict[str, str], tags: list[str] | None = None) -> list[str]:\n    \"\"\"Append this record's tag to an accumulator and return the accumulator.\"\"\"\n    if tags is None:\n        tags = []\n    tag = record.get(\"tag\")\n    if tag is not None:\n        tags.append(tag)\n    return tags",
+  "fix_rationale": "Using None as the sentinel moves list construction from definition time to call time, which is the only way to get a per-call object while keeping the parameter optional. It deliberately preserves the mutate-and-return behaviour when a caller does pass a list, because that is a legitimate use of an accumulator and other callers may rely on it.\n\nIt does not prevent a caller from passing the same list into two separate calls and recreating the aliasing at the call site. If the function should never share state, the stronger change is to drop the parameter entirely and have the caller do its own accumulation, at the cost of a less convenient signature.",
+  "distractors": [
+    "Line 12 uses 'is not None' rather than a truthiness check. That is deliberate and correct: an empty-string tag is a real value that should be recorded, and truthiness would silently drop it.",
+    "collect_tags returns the same object it was given rather than a copy. That is normal for an accumulator and is not the defect; the defect is where that object comes from when the argument is omitted."
+  ],
+  "references": [
+    "https://docs.python.org/3/reference/compound_stmts.html#function-definitions",
+    "https://docs.python.org/3/faq/programming.html#why-are-default-values-shared-between-objects"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

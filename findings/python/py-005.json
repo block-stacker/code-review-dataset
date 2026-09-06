@@ -1,0 +1,29 @@
+{
+  "id": "py-005",
+  "language": "python",
+  "snippet": "snippets/python/py-005_check_then_act_race.py",
+  "title": "Check-then-act on shared state lets every thread register the same job",
+  "category": "concurrency",
+  "severity": "critical",
+  "defect_lines": [
+    23,
+    26
+  ],
+  "explanation": "The membership test on line 23 and the insertion on line 26 are separate operations with arbitrary work between them. _prepare blocks, and a blocking call releases the GIL, so the interpreter switches threads while callers are sitting between their check and their act. Each of them has already observed an empty _jobs, so each proceeds to insert.\n\nThe GIL is what makes this easy to miss. It does make each individual dict operation atomic, so no dict is ever corrupted and nothing raises. What it does not make atomic is the check-act pair, and the function's entire contract, stated in its own docstring, depends on that pair being indivisible. Reasoning that the GIL makes Python free of data races is correct about memory and wrong about invariants.\n\nThe width of the window is the duration of _prepare, which means the defect is invisible in a unit test that stubs the network call out and severe in production where the call is slow. Test coverage here is actively misleading.",
+  "trigger": "Fifty threads calling register('job-1', ...) concurrently while _prepare takes 10 ms. Every thread reaches line 23 before any thread reaches line 26.",
+  "observed": "'one job id, submitted 50 time(s)'. All fifty callers receive True, _submitted holds fifty entries, and _jobs['job-1'] holds whichever payload happened to be written last.",
+  "expected": "'one job id, submitted 1 time(s)', with one caller receiving True and forty-nine receiving False.",
+  "fix": "_lock = threading.Lock()\n_CLAIMED = \"\"\n\ndef register(job_id: str, payload: str) -> bool:\n    \"\"\"Register a job idempotently. Returns True if this caller created it.\"\"\"\n    with _lock:\n        if job_id in _jobs:\n            return False\n        _jobs[job_id] = _CLAIMED       # claim the id before releasing the lock\n    try:\n        prepared = _prepare(payload)   # slow work runs outside the lock\n    except Exception:\n        with _lock:\n            _jobs.pop(job_id, None)    # release the claim so a retry can succeed\n        raise\n    with _lock:\n        _jobs[job_id] = prepared\n        _submitted.append(prepared)\n    return True",
+  "fix_rationale": "Inserting the claim before releasing the lock is the part that actually closes the race: the check and the state change that invalidates it for everyone else now happen without an interleaving point between them. Simply wrapping the existing body in the lock would also be correct, but it would hold the lock across _prepare and serialize registration of unrelated job ids, turning a correctness bug into a throughput one.\n\nThe try/except exists because claiming early creates a failure mode the original did not have: if _prepare raises, the id stays claimed and every retry returns False forever. Releasing the claim on failure is not optional once the claim is made early.\n\nThis is correct within one process only. Two processes, or two replicas, each have their own lock and their own _jobs, so real idempotency has to be enforced by a uniqueness constraint in whatever storage both of them share.",
+  "distractors": [
+    "_jobs and _submitted being module-level mutable state is a design smell, but it is not the defect. The identical race exists if they are instance attributes on a shared object.",
+    "dict.__contains__ and dict.__setitem__ are individually atomic under CPython's GIL, so no caller can ever observe a half-written dict. That is true, and concluding from it that this function is thread-safe is exactly the mistake this entry records.",
+    "list.append on line 27 is atomic and is not a source of lost entries. The list ends up too long, not corrupted."
+  ],
+  "references": [
+    "https://docs.python.org/3/library/threading.html#lock-objects",
+    "https://docs.python.org/3/glossary.html#term-global-interpreter-lock"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

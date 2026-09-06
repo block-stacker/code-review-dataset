@@ -1,0 +1,31 @@
+{
+  "id": "py-006",
+  "language": "python",
+  "snippet": "snippets/python/py-006_swallowed_batch_failure.py",
+  "title": "One malformed record aborts the batch, which is then reported as a success",
+  "category": "error-handling",
+  "severity": "critical",
+  "defect_lines": [
+    22,
+    25,
+    26,
+    27
+  ],
+  "explanation": "Two independent mistakes compound here.\n\nFirst, the try on line 22 wraps the whole loop rather than one iteration. The first ValueError unwinds out of the loop entirely, so every record after the malformed one is never attempted. The docstring promises to skip records that fail to parse, which is per-record recovery, and the structure cannot deliver it: the loop has no way to resume.\n\nSecond, except Exception on line 25 followed by pass discards the exception without recording it, and line 27 returns ok: True unconditionally. The caller is told the import succeeded. The imported and total counts do differ, which is the only surviving trace, but nothing in the contract requires a caller to compare them and ok: True actively discourages it.\n\nThe combined result is silent partial data loss, and it is indistinguishable from a batch where some records were legitimately skipped. Catching Exception rather than ValueError widens the damage further: a bug inside _parse, or a MemoryError, is absorbed the same way as an expected bad row.",
+  "trigger": "import_batch(['host=localhost', '=orphaned', 'port=8080']): one valid record, then a malformed one, then another valid one.",
+  "observed": "{'ok': True, 'imported': 1, 'total': 3}. The record 'port=8080' is perfectly valid but is never parsed, and no error is surfaced to the caller.",
+  "expected": "Both valid records imported and the malformed one reported, for example {'ok': False, 'imported': 2, 'total': 3, 'errors': [\"missing name in '=orphaned'\"]}.",
+  "fix": "def import_batch(raw_records: list[str]) -> dict[str, Any]:\n    \"\"\"Import every record, skipping ones that fail to parse.\"\"\"\n    imported: list[dict[str, str]] = []\n    errors: list[str] = []\n    for raw in raw_records:\n        try:\n            imported.append(_parse(raw))\n        except ValueError as exc:\n            errors.append(str(exc))\n    return {\n        \"ok\": not errors,\n        \"imported\": len(imported),\n        \"total\": len(raw_records),\n        \"errors\": errors,\n    }",
+  "fix_rationale": "Moving the try inside the loop is what actually provides the per-record recovery the docstring already claims. Narrowing to ValueError means a genuine bug in _parse, a KeyboardInterrupt, or a MemoryError propagates instead of being miscounted as a skipped row. Collecting the messages gives the caller something to act on, and deriving ok from whether any errors occurred makes the flag mean something rather than being a constant.\n\nThis changes the return shape, so every caller has to be updated. That cost is the reason the original was easy to leave in place, and it should be stated in the review rather than discovered during the merge.\n\nThe fix deliberately does not decide policy. Whether a partially failed batch should be committed, rolled back, or retried is the caller's decision; all this guarantees is that the caller now has the information needed to make it.",
+  "distractors": [
+    "_parse raising rather than returning None is the right design for a parse function and is not the defect. Everything wrong here is in how the caller handles the exception.",
+    "raw.partition('=') accepts a record with no '=' and produces an empty value rather than raising. That is deliberate: an empty value is legal, a missing name is not, and line 14 checks the case that actually matters.",
+    "Returning a plain dict rather than a typed result object is loose, but the shape is documented and the caller can read it. It is a style question, not the failure."
+  ],
+  "references": [
+    "https://docs.python.org/3/tutorial/errors.html#handling-exceptions",
+    "https://docs.python.org/3/library/exceptions.html#exception-hierarchy"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

@@ -1,0 +1,28 @@
+{
+  "id": "py-003",
+  "language": "python",
+  "snippet": "snippets/python/py-003_mutation_during_iteration.py",
+  "title": "Removing from the list being iterated skips the element after each removal",
+  "category": "correctness",
+  "severity": "high",
+  "defect_lines": [
+    12,
+    14
+  ],
+  "explanation": "Iterating a list advances an internal integer index. list.remove shifts every later element down one position, but the loop's index still increments on the next step, so the element that moved into the vacated slot is never visited. Each removal therefore skips exactly one following element, and the skipped element keeps whatever state it had.\n\nPython does not detect this for lists. Dicts and sets raise RuntimeError when they change size during iteration, and that guard trains people to expect the language to catch this class of mistake; lists provide no such check, so the loop completes normally and returns a count that is simply too low.\n\nThere is a second, quieter hazard on the same line. list.remove deletes the first element equal to its argument, and dict equality is structural rather than by identity, so two sessions with identical contents would cause the wrong object to be removed.",
+  "trigger": "A registry whose first three sessions are expired and whose fourth is not: ids 1, 2 and 3 expiring at 10, id 4 expiring at 99, pruned with now=50.",
+  "observed": "'removed 2, still registered: [2, 4]'. Session 2 is expired but survives the prune.",
+  "expected": "'removed 3, still registered: [4]'",
+  "fix": "def prune_expired(sessions: list[dict[str, int]], now: int) -> int:\n    \"\"\"Remove every session whose deadline has passed, returning the count removed.\"\"\"\n    live = [s for s in sessions if s[\"expires_at\"] > now]\n    removed = len(sessions) - len(live)\n    sessions[:] = live\n    return removed",
+  "fix_rationale": "Deciding which sessions survive before mutating anything removes the interaction between iteration and removal entirely, rather than patching around it. Counting by length difference also drops the dependence on dict equality that list.remove introduced.\n\nThe slice assignment on the last line is load-bearing. sessions[:] = live mutates the caller's list in place, preserving object identity for anyone else holding a reference. Writing sessions = live instead would type-check, pass a test that inspects the return value, and silently stop affecting the caller at all. That is a strictly worse bug than the one being fixed, and it is the most likely way for this fix to be applied wrongly.\n\nIt does not make the function safe under concurrent mutation; another thread appending during the comprehension is still a race.",
+  "distractors": [
+    "The comparison uses <= rather than <, so a session expiring exactly at now is treated as expired. That is the conventional reading of a deadline and is applied consistently.",
+    "Mutating the caller's list rather than returning a new one is part of this function's contract, signalled by the int return type, and is not the defect."
+  ],
+  "references": [
+    "https://docs.python.org/3/tutorial/controlflow.html#for-statements",
+    "https://docs.python.org/3/library/stdtypes.html#mutable-sequence-types"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

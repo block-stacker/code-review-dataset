@@ -1,0 +1,29 @@
+{
+  "id": "py-004",
+  "language": "python",
+  "snippet": "snippets/python/py-004_naive_and_local_datetime_mix.py",
+  "title": "Naive UTC timestamp is compared against naive local time, expiring tokens early",
+  "category": "correctness",
+  "severity": "high",
+  "defect_lines": [
+    17,
+    23
+  ],
+  "explanation": "Both operands on line 23 are naive datetimes, so Python compares them without complaint. Mixing a naive and an aware datetime raises TypeError, which is the language's one guard in this area; two naive values are instead assumed to share a timezone.\n\nHere they do not. Line 17 produces a correct UTC instant and then strips the tzinfo, leaving a naive value whose wall-clock reading is UTC. datetime.now() on line 23 returns a naive value whose reading is the host's local time. The comparison is therefore off by the host's UTC offset, always in the direction that makes tokens appear older than they are for hosts east of UTC.\n\nThe replace(tzinfo=None) call is the precise step that destroys the information Python would otherwise have used to reject the comparison. Note also that on a host configured for UTC the two readings coincide and the file behaves correctly, which is why this class of defect routinely survives a CI suite that runs in a UTC container and only appears on a developer's machine or in one region.",
+  "trigger": "Run on a host with a non-zero UTC offset (this entry was annotated on a UTC+09:00 host), issue a token with a one-hour TTL, and check it immediately.",
+  "observed": "'expired? True' immediately after issue. expires_at reads 2026-09-08 22:41 while datetime.now() reads 2026-09-09 06:41, a nine-hour gap that is purely the UTC offset.",
+  "expected": "'expired? False' for the first hour after the token is issued.",
+  "fix": "def is_expired(token: dict[str, datetime]) -> bool:\n    \"\"\"Return True once the token's expiry has passed.\"\"\"\n    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)\n    return token[\"expires_at\"] <= now_utc",
+  "fix_rationale": "This makes both operands naive-UTC, matching the convention line 17 already established and the shape the storage column requires. It is the smallest change that restores correctness and does not touch the storage layer.\n\nIt is a patch rather than a cure. The codebase still passes naive datetimes around as if they were UTC, a convention no type checker can verify and the next contributor cannot see from a signature. The durable fix is to keep values aware end to end and convert only at the storage boundary, which has the additional benefit of turning this silent skew into a loud TypeError the first time someone gets it wrong.",
+  "distractors": [
+    "Storing a naive timestamp is a constraint imposed by the storage column and is documented in the docstring on lines 14-15. It is what the code is working within, not the defect.",
+    "The comparison uses <= so a token is expired at exactly its expiry instant. That is the intended reading and contributes nothing to the error.",
+    "issue_token itself is correct: datetime.now(timezone.utc) is the right way to get the current instant, and the arithmetic against a timedelta is sound."
+  ],
+  "references": [
+    "https://docs.python.org/3/library/datetime.html#aware-and-naive-objects",
+    "https://docs.python.org/3/library/datetime.html#datetime.datetime.now"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}
