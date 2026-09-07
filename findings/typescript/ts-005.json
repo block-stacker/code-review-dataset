@@ -1,0 +1,30 @@
+{
+  "id": "ts-005",
+  "language": "typescript",
+  "snippet": "snippets/typescript/ts-005_shallow_copy_leaks_mutation.ts",
+  "title": "Spread copy is shallow, so disabling notifications mutates the original",
+  "category": "correctness",
+  "severity": "high",
+  "defect_lines": [
+    17,
+    18,
+    19
+  ],
+  "explanation": "Object spread copies own enumerable properties by value. The value of notifications is a reference, so the copy holds the very same nested object the original does. Assigning through copy.notifications writes into the original, and the docstring's promise that settings is left untouched is broken on every call.\n\nTypeScript cannot see this. copy and settings have identical types and both permit the assignment, because the type system models shape rather than aliasing. Declaring the nested properties readonly would have made the assignment an error; the interface as written does not.\n\nWhat makes it survive review is that the mutation is invisible at the call site. The caller receives a correct-looking result and gets no indication that the argument it passed has also changed. The damage surfaces somewhere else entirely, usually as state that is stale in a way that appears impossible from reading the code that observes it.",
+  "trigger": "withNotificationsOff({ theme: 'dark', notifications: { email: true, push: true } }) where the caller retains a reference to the object it passed in.",
+  "observed": "After the call the original reads { theme: 'dark', notifications: { email: false, push: false } }, and copy.notifications === original.notifications is true.",
+  "expected": "The original is unchanged, and the returned value owns a separate notifications object.",
+  "fix": "export function withNotificationsOff(settings: Settings): Settings {\n  return {\n    ...settings,\n    notifications: { ...settings.notifications, email: false, push: false },\n  };\n}",
+  "fix_rationale": "Spreading the nested object gives it its own identity. Building the whole result as a single expression matters at least as much as the extra spread: there is no longer a moment where a copy exists and is then written to, so the pattern that caused the defect is gone rather than corrected.\n\nThis is correct for exactly one level of extra nesting. If Settings grows a deeper structure the same defect returns, silently and with no compiler assistance. The durable defences are to mark the nested types readonly, so the assignment becomes an error rather than a convention, or to hold the state in a structure that is immutable by construction.\n\nstructuredClone would also produce a correct result, but it deep-copies everything for a two-field object and would mask rather than express which part of the structure actually needed its own identity.",
+  "distractors": [
+    "Returning the same Settings type rather than a distinct branded type is fine; the contract is to return a value of the same shape.",
+    "Setting email and push explicitly rather than mapping over the object's keys is more verbose but is correct, and stays correct if a non-boolean field is added later.",
+    "const on line 17 prevents rebinding copy, not mutation through it. That is standard and is not a misuse."
+  ],
+  "references": [
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax",
+    "https://www.typescriptlang.org/docs/handbook/2/objects.html#readonly-properties"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

@@ -1,0 +1,27 @@
+{
+  "id": "ts-001",
+  "language": "typescript",
+  "snippet": "snippets/typescript/ts-001_default_sort_is_lexicographic.ts",
+  "title": "Default sort compares numbers as strings, so the top scores are wrong",
+  "category": "api-contract",
+  "severity": "high",
+  "defect_lines": [
+    9
+  ],
+  "explanation": "Array.prototype.sort called with no comparator converts every element to a string and orders by UTF-16 code unit. For numbers that means '10' sorts before '9', so the result is lexicographic rather than numeric. The zero-argument call is part of the documented signature and the array is typed number[], so TypeScript reports nothing.\n\nA second defect shares the line. Both sort and reverse mutate the receiver and return it, so the caller's array is left permanently reordered by a function whose name and return type both suggest it only reads its input. That side effect is invisible at the call site and outlives the call.",
+  "trigger": "topScores([9, 10, 100, 25, 3], 3), with the caller keeping a reference to the array it passed.",
+  "observed": "Returns [9, 3, 25], and the caller's array is left reordered as [9, 3, 25, 100, 10].",
+  "expected": "Returns [100, 25, 10], with the caller's array unchanged.",
+  "fix": "export function topScores(scores: number[], limit: number): number[] {\n  return [...scores].sort((a, b) => b - a).slice(0, limit);\n}",
+  "fix_rationale": "The comparator makes the ordering numeric, and sorting descending directly removes the reverse call rather than correcting its input.\n\nCopying with the spread before sorting is the part most likely to be dropped when applying this fix. sort mutates in place, so without the copy the function would still reorder the caller's array even once the ordering is correct, which leaves the harder half of the defect in place while appearing to fix it.\n\nThe comparator returns b - a rather than a boolean because that is what the interface requires: a negative, zero, or positive number. Returning a boolean also typechecks and produces an implementation-defined order, which is a common follow-on mistake. This does not handle NaN, which compares false in every direction and will settle in an arbitrary position.",
+  "distractors": [
+    "slice(0, limit) with a limit larger than the array returns the whole array rather than throwing, so no bounds check is missing.",
+    "Returning number[] rather than a readonly array is loose, but the mutation happens to the input and not through the returned value."
+  ],
+  "references": [
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/sort",
+    "https://tc39.es/ecma262/#sec-array.prototype.sort"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

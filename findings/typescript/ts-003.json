@@ -1,0 +1,28 @@
+{
+  "id": "ts-003",
+  "language": "typescript",
+  "snippet": "snippets/typescript/ts-003_unchecked_type_assertion.ts",
+  "title": "Type assertion on JSON.parse promises a shape nothing verifies at runtime",
+  "category": "type-safety",
+  "severity": "high",
+  "defect_lines": [
+    14
+  ],
+  "explanation": "An as assertion is a claim made to the compiler, not a conversion. It emits no code, so JSON.parse returns whatever the body contained and every function downstream proceeds on a guarantee that was never checked. JSON.parse is declared to return any, and any is assignable to anything, which is precisely why the assertion draws no complaint.\n\nThe failure is quiet rather than loud. A body that omits celsius leaves it undefined, and undefined * 1.8 + 32 evaluates to NaN instead of throwing, so a meaningless value propagates into whatever consumes the reading. NaN then compares false against every threshold, so an alerting rule downstream does not fire and the absence of an alert is indistinguishable from a healthy sensor.\n\nNothing downstream can recover from this. Inside toFahrenheit, reading.celsius has type number, and no amount of strictness there can restore the information discarded on line 14. The assertion sits exactly at the trust boundary, which is both why it is tempting and why it is the only place a check can be added.",
+  "trigger": "parseReading('{\"sensorId\":\"probe-1\"}'): well-formed JSON that omits celsius, which any buggy or hostile client can send.",
+  "observed": "toFahrenheit returns NaN, and no error is raised at any point.",
+  "expected": "The body is rejected at the boundary with an error naming the field that is missing or of the wrong type.",
+  "fix": "export function parseReading(body: string): Reading {\n  const parsed: unknown = JSON.parse(body);\n  if (typeof parsed !== \"object\" || parsed === null) {\n    throw new TypeError(`malformed reading: ${body}`);\n  }\n  const { sensorId, celsius } = parsed as Record<string, unknown>;\n  if (typeof sensorId !== \"string\" || typeof celsius !== \"number\" || Number.isNaN(celsius)) {\n    throw new TypeError(`malformed reading: ${body}`);\n  }\n  return { sensorId, celsius };\n}",
+  "fix_rationale": "Annotating the parse result as unknown rather than letting it stay any is the change that does the work. unknown forces every subsequent access through a narrowing check, so the compiler starts helping instead of standing aside.\n\nReturning a fresh object built from the narrowed locals means the result needs no assertion at all. The only as that remains is the widening to Record<string, unknown>, which is sound because the preceding check already established that the value is a non-null object. The explicit NaN check is there because JSON can carry a number that is unusable, and typeof alone would accept it.\n\nThis validates one shape by hand and does not scale. Past two or three boundary types the right move is a schema validator that derives the TypeScript type from the schema, so the type and the runtime check cannot drift apart. Note also that the fix converts a silent NaN into a thrown error. That is a deliberate escalation: the caller now has to decide what a malformed body means, and that decision belongs at the boundary rather than three functions downstream.",
+  "distractors": [
+    "toFahrenheit is correct. Its arithmetic is right and its parameter type is honest; it is simply handed a value that lied about its type.",
+    "Declaring Reading as an interface rather than a class is not the problem. A class would be asserted in exactly the same way, and would additionally lose its prototype and methods through JSON.parse.",
+    "JSON.parse throwing on syntactically invalid input is already handled by the caller in the real system. The gap is valid JSON of the wrong shape, which JSON.parse accepts without complaint."
+  ],
+  "references": [
+    "https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#type-assertions",
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/parse"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

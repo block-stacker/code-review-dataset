@@ -82,3 +82,5 @@ next time:
 - **Check-then-act on shared state** is `critical` when the lost write is data, `high` when it only causes duplicated work.
 - **Unvalidated `as` assertions** are `high` rather than `critical` unless the value crosses a trust boundary, in which case the finding is `security`.
 - **Shallow copies** are `high`, not `medium`. The aliasing is invisible at the call site, which is the escalation rule for quiet defects.
+- **An unawaited async callback** is `critical` rather than `high`. The wrong return value alone would be `high`, but the discarded promise also means a rejected operation is reported to nobody, and a caller that reads resolution as durability can drop data on the strength of it. Both halves are silent.
+- **Lexicographic sort** is `high`, not `critical`. The output is wrong but visibly so, and it does not destroy anything beyond the ordering of the caller's array.

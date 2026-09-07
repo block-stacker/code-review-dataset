@@ -1,0 +1,13 @@
+{
+  "name": "code-review-dataset",
+  "version": "0.1.0",
+  "description": "Hand-annotated defects in Python and TypeScript that survive the toolchain.",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3"
+  }
+}

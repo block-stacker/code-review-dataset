@@ -1,0 +1,31 @@
+{
+  "id": "ts-002",
+  "language": "typescript",
+  "snippet": "snippets/typescript/ts-002_async_callback_in_foreach.ts",
+  "title": "Async callback given to forEach is never awaited, so the function resolves before any write",
+  "category": "concurrency",
+  "severity": "critical",
+  "defect_lines": [
+    17,
+    20,
+    21
+  ],
+  "explanation": "forEach invokes its callback and discards whatever it returns. An async callback returns a promise, so forEach starts each one and moves straight on, finishing once every callback has been started rather than completed. Control reaches line 21 with every save still pending, so written is still 0 and the function resolves to a count that is not just stale but always zero.\n\nTypeScript does not object. forEach's callback is typed as returning void, and Promise<void> is assignable to void by an explicit rule that exists so callbacks may ignore return values. That convenience is what removes the one signal that would have caught this.\n\nThe second consequence is more serious than the wrong count. Each discarded promise is the only handle on its save, so a rejection has no handler attached and surfaces as an unhandled rejection rather than as an error the caller can see or catch. A failed write is therefore invisible at the call site, and a caller that treats the resolved promise as meaning 'durably stored' may acknowledge a request or clear a queue on the strength of it.",
+  "trigger": "flushOrders with three orders and a save that resolves after 10 ms, with the caller acting on the returned count.",
+  "observed": "Resolves to 0 with nothing yet saved. The three writes complete roughly 10 ms later, after the caller has already continued.",
+  "expected": "Resolves to 3, and only after all three writes have completed.",
+  "fix": "export async function flushOrders(\n  orders: Order[],\n  save: (order: Order) => Promise<void>,\n): Promise<number> {\n  await Promise.all(orders.map((order) => save(order)));\n  return orders.length;\n}",
+  "fix_rationale": "map keeps the promises instead of discarding them, and Promise.all is what actually waits. Because a rejection now propagates out of flushOrders, a failed write becomes an error the caller can handle rather than an unhandled rejection the process discovers on its own.\n\nCounting with orders.length rather than an incremented variable is deliberate. Under Promise.all either every write succeeded or the function threw, so a separate counter has no state it could report that the return type does not already imply, and it could only ever disagree with reality.\n\nTwo things this fix decides rather than fixes. It preserves the original's full concurrency, which is wrong if save hits a rate-limited service; a for...of loop or a bounded pool is the right shape there. And it adopts all-or-nothing semantics, so the first rejection abandons the result even though other writes may have succeeded. Promise.allSettled is the alternative where partial success has to be reported.",
+  "distractors": [
+    "written being captured by the closure is not the problem. The closure does update it correctly; the defect is when it is read, not how it is shared.",
+    "forEach is not deprecated and is not wrong for a synchronous callback. The incompatibility is specifically between forEach and a callback that returns a promise.",
+    "Injecting save as a parameter rather than importing it is a testability choice and has no bearing on the defect."
+  ],
+  "references": [
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/forEach",
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise/all",
+    "https://www.typescriptlang.org/docs/handbook/2/functions.html#return-type-void"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

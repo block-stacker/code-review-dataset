@@ -1,0 +1,28 @@
+{
+  "id": "ts-006",
+  "language": "typescript",
+  "snippet": "snippets/typescript/ts-006_map_passes_index_as_radix.ts",
+  "title": "map passes the element index to parseInt as a radix, so every port after the first is NaN",
+  "category": "api-contract",
+  "severity": "high",
+  "defect_lines": [
+    9
+  ],
+  "explanation": "map calls its callback with three arguments: the value, the index, and the array. parseInt accepts two: the string and a radix. Passing parseInt directly means each element is parsed in a base taken from its own position.\n\nThe specific results explain why this is hard to spot. Index 0 is falsy and parseInt treats a radix of 0 as unspecified, so the first element parses correctly. Index 1 is not a valid radix and yields NaN. From index 2 on, the string is parsed in that base, so '8080' read as binary stops at its first invalid digit and yields NaN as well.\n\nIt typechecks because parseInt's parameter list is shorter than the signature map expects, and a function taking fewer parameters is assignable to one taking more. That rule is deliberate and is what lets anyone write .map((x) => x) without declaring two unused arguments; here it is exactly what removes the error. Combined with the first element always being correct, a short or single-element test input produces entirely plausible output.",
+  "trigger": "parsePorts('80,443,8080'): three comma-separated ports, the shortest input that exposes all three behaviours.",
+  "observed": "[80, NaN, NaN]",
+  "expected": "[80, 443, 8080]",
+  "fix": "export function parsePorts(raw: string): number[] {\n  return raw.split(\",\").map((value) => Number.parseInt(value, 10));\n}",
+  "fix_rationale": "The arrow function fixes the arity so only the value reaches parseInt, and stating the radix explicitly removes the remaining reliance on parseInt inferring a base from the string's prefix. Number.parseInt is the same function as the global; it is used here only because the namespace makes the intent legible at a glance.\n\nThis still does not validate. parseInt('80abc', 10) returns 80 and parseInt('', 10) returns NaN, so a caller that needs malformed input rejected has to check the result, and for something as constrained as a port a range check belongs here too. If any non-numeric input should be an error rather than a NaN, Number(value) is the stricter primitive, since it rejects the trailing garbage parseInt tolerates.",
+  "distractors": [
+    "split(',') on a string containing no comma returns a single-element array rather than throwing. That is documented behaviour and is handled correctly.",
+    "Returning number[] containing NaN is type-correct, since NaN is a number. The type system is not wrong here, merely not expressive enough to help.",
+    "Using the global parseInt rather than Number.parseInt has no behavioural difference; they are the same function."
+  ],
+  "references": [
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/parseInt",
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Array/map"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}

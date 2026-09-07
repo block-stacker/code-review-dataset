@@ -1,0 +1,29 @@
+{
+  "id": "ts-004",
+  "language": "typescript",
+  "snippet": "snippets/typescript/ts-004_falsy_default_clobbers_zero.ts",
+  "title": "Logical OR default discards a caller's explicit zero and empty string",
+  "category": "correctness",
+  "severity": "high",
+  "defect_lines": [
+    22,
+    23
+  ],
+  "explanation": "The || operator yields its right operand whenever the left is falsy, and falsy includes 0, the empty string, NaN, null and undefined. What this code means to detect is absence, and absence for an optional property is specifically undefined. Every caller that passes 0 or '' is stating a value, and the expression throws it away.\n\nThe types encourage the mistake. maxRetries?: number narrows to number | undefined, and || accepts that operand without comment, so nothing signals that the guard is wider than the type it is guarding.\n\nThe consequence is inverted from the caller's intent, which is what makes it worth flagging rather than merely noting. maxRetries: 0 means do not retry, and this silently turns it into three retries. The failure mode is doing more work after being told to do less, against a dependency the caller was probably trying to protect.",
+  "trigger": "resolveOptions({ maxRetries: 0, label: '' }): a caller explicitly disabling retries and clearing the label.",
+  "observed": "{ maxRetries: 3, label: 'job' }",
+  "expected": "{ maxRetries: 0, label: '' }",
+  "fix": "export function resolveOptions(options: RetryOptions): ResolvedOptions {\n  return {\n    maxRetries: options.maxRetries ?? DEFAULTS.maxRetries,\n    label: options.label ?? DEFAULTS.label,\n  };\n}",
+  "fix_rationale": "?? falls back only on null and undefined, which is exactly the set that means 'not supplied' for an optional property. The guard now matches the type it is guarding.\n\nThe substitution is mechanical here but must not be applied mechanically across a codebase. || is the correct operator wherever an empty string or a zero genuinely should be treated as absent, and a blanket find-and-replace would introduce the mirror-image bug in those places.\n\nThis does not validate the value. A caller passing a negative maxRetries still gets it through, and whether that should be rejected is a separate question from where the default comes from. Keeping the two concerns separate is intentional; folding validation in here would hide it from callers who supply their own value.",
+  "distractors": [
+    "DEFAULTS being a module-level const is safe. It is never mutated and sharing one instance across calls has no effect on the defect.",
+    "Marking the properties optional with ? rather than typing them as number | undefined explicitly is the conventional way to express an option and is not the problem.",
+    "Building a new object rather than mutating options is correct and is what keeps the caller's argument intact."
+  ],
+  "references": [
+    "https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Nullish_coalescing",
+    "https://developer.mozilla.org/en-US/docs/Glossary/Falsy"
+  ],
+  "annotator": "block-stacker",
+  "annotated_on": "2026-09-09"
+}
