@@ -1,0 +1,41 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  dataset:
+    name: dataset and tools
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python3 -m pip install "jsonschema==4.23.0"
+      - name: Validate every record against the schema and its snippet
+        run: ./check.sh validate
+      - name: Fail if the committed catalog is stale
+        run: ./check.sh catalog-check
+      - name: Confirm every snippet still runs
+        run: ./check.sh snippets
+      - name: Run the test suite
+        run: ./check.sh test
+      - name: Report composition
+        run: ./check.sh stats
+
+  typescript:
+    name: typescript snippets compile under strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Typecheck under strict
+        run: ./check.sh typecheck
